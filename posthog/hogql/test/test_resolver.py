@@ -246,15 +246,20 @@ class TestResolver(BaseTest):
                     WITH cte1 AS (SELECT 1 AS a)
                     SELECT 1 AS a
                     UNION ALL
-                    WITH cte2 AS (SELECT 1 AS a)
+                    WITH cte2 AS (SELECT 2 AS a)
                     SELECT * FROM cte2
                     UNION ALL
+                    SELECT * FROM cte1
+                    UNION ALL
+                    WITH cte3 AS (SELECT 3 AS a)
                     SELECT * FROM cte1
                         """),
             self._print_hogql("""
                     SELECT 1 AS a
                     UNION ALL
-                    SELECT * FROM (SELECT 1 AS a) AS cte2
+                    SELECT * FROM (SELECT 2 AS a) AS cte2
+                    UNION ALL
+                    SELECT * FROM (SELECT 1 AS a) AS cte1
                     UNION ALL
                     SELECT * FROM (SELECT 1 AS a) AS cte1
                         """),
