@@ -346,9 +346,6 @@ class CompareMixin(BaseParamMixin):
 
 
 class DateMixin(BaseParamMixin):
-    date_from_delta_mapping: Optional[dict[str, int]]
-    date_to_delta_mapping: Optional[dict[str, int]]
-
     @cached_property
     def _date_from(self) -> Optional[Union[str, datetime.datetime]]:
         return self._data.get(DATE_FROM, None)
@@ -359,58 +356,52 @@ class DateMixin(BaseParamMixin):
 
     @cached_property
     def date_from(self) -> Optional[datetime.datetime]:
-        self.date_from_delta_mapping = None
-        if self._date_from:
-            if self._date_from == "all":
-                return None
-            elif isinstance(self._date_from, str):
-                date, delta_mapping, _position = relative_date_parse_with_delta_mapping(
-                    self._date_from,
-                    self.team.timezone_info,  # type: ignore
-                    always_truncate=True,
-                )
-                self.date_from_delta_mapping = delta_mapping
-                return date
-            else:
-                return self._date_from
-        return timezone.now().replace(hour=0, minute=0, second=0, microsecond=0) - relativedelta(
-            days=DEFAULT_DATE_FROM_DAYS
-        )
+        if not self._date_from:
+            return timezone.now().replace(hour=0, minute=0, second=0, microsecond=0) - relativedelta(
+                days=DEFAULT_DATE_FROM_DAYS
+            )
+
+        if self._date_from == "all":
+            return None
+
+        if isinstance(self._date_from, str):
+            date, _, _ = relative_date_parse_with_delta_mapping(
+                self._date_from,
+                self.team.timezone_info,  # type: ignore
+                always_truncate=True,
+            )
+            return date
+
+        return self._date_from
 
     @cached_property
     def date_to(self) -> datetime.datetime:
-        self.date_to_delta_mapping = None
         if not self._date_to:
             return timezone.now()
-        else:
-            if isinstance(self._date_to, str):
+
+        if isinstance(self._date_to, str):
+            try:
+                return datetime.datetime.strptime(self._date_to, "%Y-%m-%d").replace(
+                    hour=23,
+                    minute=59,
+                    second=59,
+                    microsecond=999999,
+                    tzinfo=ZoneInfo("UTC"),
+                )
+            except ValueError:
                 try:
-                    return datetime.datetime.strptime(self._date_to, "%Y-%m-%d").replace(
-                        hour=23,
-                        minute=59,
-                        second=59,
-                        microsecond=999999,
-                        tzinfo=ZoneInfo("UTC"),
+                    return datetime.datetime.strptime(self._date_to, "%Y-%m-%d %H:%M:%S").replace(
+                        tzinfo=ZoneInfo("UTC")
                     )
                 except ValueError:
-                    try:
-                        return datetime.datetime.strptime(self._date_to, "%Y-%m-%d %H:%M:%S").replace(
-                            tzinfo=ZoneInfo("UTC")
-                        )
-                    except ValueError:
-                        (
-                            date,
-                            delta_mapping,
-                            _position,
-                        ) = relative_date_parse_with_delta_mapping(
-                            self._date_to,
-                            self.team.timezone_info,  # type: ignore
-                            always_truncate=True,
-                        )
-                        self.date_to_delta_mapping = delta_mapping
-                        return date
-            else:
-                return self._date_to
+                    date, _, _ = relative_date_parse_with_delta_mapping(
+                        self._date_to,
+                        self.team.timezone_info,  # type: ignore
+                        always_truncate=True,
+                    )
+                    return date
+
+        return self._date_to
 
     @cached_property
     def use_explicit_dates(self) -> bool:

@@ -441,17 +441,37 @@ class TestShouldRefresh(TestCase):
         drf_request._full_data = {"refresh": False}  # type: ignore
         self.assertFalse(refresh_requested_by_client(drf_request))
 
+
+class TestComparisonPeriod(TestCase):
     def test_can_get_period_to_compare_when_interval_is_day(self) -> None:
         """
         regression test see https://sentry.io/organizations/posthog/issues/3719740579/events/latest/?project=1899813&referrer=latest-event
         """
-        assert get_compare_period_dates(
+        (date_from, date_to) = get_compare_period_dates(
             date_from=datetime(2022, 1, 1, 0, 0),
             date_to=datetime(2022, 11, 4, 21, 20, 41, 730028),
-            date_from_delta_mapping={"day": 1, "month": 1},
-            date_to_delta_mapping=None,
             interval="day",
-        ) == (datetime(2021, 2, 27, 0, 0), datetime(2021, 12, 31, 23, 59, 59, 999999))
+        )
+        assert date_from == datetime(2021, 2, 28, 0, 0)
+        assert date_to == datetime(2022, 1, 1, 0, 0)
+
+    def test_day_period(self) -> None:
+        (date_from, date_to) = get_compare_period_dates(
+            date_from=datetime(2024, 1, 7, 0, 0),
+            date_to=datetime(2024, 1, 9, 21, 20, 41, 730028),
+            interval="day",
+        )
+        assert date_from == datetime(2024, 1, 5, 0, 0)
+        assert date_to == datetime(2024, 1, 7, 0, 0)
+
+    def test_hour_period(self) -> None:
+        (date_from, date_to) = get_compare_period_dates(
+            date_from=datetime(2024, 1, 7, 0, 0),
+            date_to=datetime(2024, 1, 9, 21, 20, 41, 730028),
+            interval="hour",
+        )
+        assert date_from == datetime(2024, 1, 5, 0, 0)
+        assert date_to == datetime(2024, 1, 7, 0, 0)
 
 
 class TestFlatten(TestCase):

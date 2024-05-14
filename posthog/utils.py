@@ -51,6 +51,7 @@ from posthog.cloud_utils import get_cached_instance_license, is_cloud
 from posthog.constants import AvailableFeature
 from posthog.exceptions import RequestParsingError
 from posthog.git import get_git_branch, get_git_commit_short
+from posthog.datetime import start_of_day, start_of_month, start_of_week, start_of_minute
 from posthog.metrics import KLUDGES_COUNTER
 from posthog.redis import get_client
 
@@ -544,43 +545,29 @@ def convert_property_value(input: Union[str, bool, dict, list, int, Optional[str
     return str(input)
 
 
+def _truncate_date_for_comparison(date: datetime.datetime, interval: str) -> datetime.datetime:
+    if interval == "minute":
+        return start_of_minute(date)
+    if interval == "hour" or interval == "day":
+        # With an hourly interval we want to compare data for the _same hours_ of the current and the previous periods.
+        # If we truncate the date to the start of day, get_compare_period_dates will do exactly that.
+        return start_of_day(date)
+    if interval == "week":
+        return start_of_week(date)
+    if interval == "month":
+        return start_of_month(date)
+    raise ValueError(f"Invalid interval: '{interval}'")
+
+
 def get_compare_period_dates(
     date_from: datetime.datetime,
     date_to: datetime.datetime,
-    date_from_delta_mapping: Optional[dict[str, int]],
-    date_to_delta_mapping: Optional[dict[str, int]],
     interval: str,
 ) -> tuple[datetime.datetime, datetime.datetime]:
+    date_to = _truncate_date_for_comparison(date_to, interval)
     diff = date_to - date_from
     new_date_from = date_from - diff
-    new_date_to = date_from
-    if interval == "hour":
-        # Align previous period time range with that of the current period, so that results are comparable day-by-day
-        # (since variations based on time of day are major)
-        new_date_from = new_date_from.replace(hour=date_from.hour, minute=0, second=0, microsecond=0)
-        new_date_to = (new_date_from + diff).replace(minute=59, second=59, microsecond=999999)
-    elif interval != "minute":
-        # Align previous period time range to day boundaries
-        new_date_from = new_date_from.replace(hour=0, minute=0, second=0, microsecond=0)
-        # Handle date_from = -7d, -14d etc. specially
-        if (
-            interval == "day"
-            and date_from_delta_mapping
-            and date_from_delta_mapping.get("days", None)
-            and date_from_delta_mapping["days"] % 7 == 0
-            and not date_to_delta_mapping
-        ):
-            # KLUDGE: Unfortunately common relative date ranges such as "Last 7 days" (-7d) or "Last 14 days" (-14d)
-            # are wrong because they treat the current ongoing day as an _extra_ one. This means that those ranges
-            # are in reality, respectively, 8 and 15 days long. So for the common use case of comparing weeks,
-            # it's not possible to just use that period length directly - the results for the previous period
-            # would be misaligned by a day.
-            # The proper fix would be making -7d actually 7 days, but that requires careful consideration.
-            # As a quick fix for the most common week-by-week case, we just always add a day to counteract the woes
-            # of relative date ranges:
-            new_date_from += datetime.timedelta(days=1)
-        new_date_to = (new_date_from + diff).replace(hour=23, minute=59, second=59, microsecond=999999)
-    return new_date_from, new_date_to
+    return new_date_from, date_from
 
 
 def generate_cache_key(stringified: str) -> str:
