@@ -10,7 +10,7 @@ from posthog.email import EmailMessage
 from posthog.hogql_queries.legacy_compatibility.flagged_conversion_manager import (
     conversion_to_query_based,
 )
-from posthog.models import Alert
+from posthog.models import Alert, AlertCheck
 from posthog.schema import AnomalyCondition
 
 logger = structlog.get_logger(__name__)
@@ -36,38 +36,54 @@ def check_all_alerts() -> None:
 def check_alert(alert_id: int) -> None:
     alert = Alert.objects.get(pk=alert_id)
     insight = alert.insight
+    alert_check = AlertCheck(
+        alert=alert,
+        checked_at=timezone.now(),
+        anomaly_condition=alert.anomaly_condition,
+        check_result=AlertCheck.CheckResult.Error,
+    )
 
-    with conversion_to_query_based(insight):
-        calculation_result = calculate_for_query_based_insight(
-            insight,
-            execution_mode=ExecutionMode.RECENT_CACHE_CALCULATE_BLOCKING_IF_STALE,
-            user=None,
-        )
+    try:
+        with conversion_to_query_based(insight):
+            calculation_result = calculate_for_query_based_insight(
+                insight,
+                execution_mode=ExecutionMode.RECENT_CACHE_CALCULATE_BLOCKING_IF_STALE,
+                user=None,
+            )
 
-    if not calculation_result.result:
-        raise RuntimeError(f"No results for alert {alert.id}")
+        if not calculation_result.result:
+            raise RuntimeError(f"No results for alert {alert.id}")
 
-    anomaly_condition = AnomalyCondition.model_validate(alert.anomaly_condition)
-    thresholds = anomaly_condition.absoluteThreshold
+        anomaly_condition = AnomalyCondition.model_validate(alert.anomaly_condition)
+        thresholds = anomaly_condition.absoluteThreshold
 
-    result = calculation_result.result[0]
-    aggregated_value = result["aggregated_value"]
-    anomalies_descriptions = []
+        result = calculation_result.result[0]
+        aggregated_value = result["aggregated_value"]
+        alert_check.calculated_value = aggregated_value
 
-    if thresholds.lower is not None and aggregated_value < thresholds.lower:
-        anomalies_descriptions += [
-            f"The trend value ({aggregated_value}) is below the lower threshold ({thresholds.lower})"
-        ]
-    if thresholds.upper is not None and aggregated_value > thresholds.upper:
-        anomalies_descriptions += [
-            f"The trend value ({aggregated_value}) is above the upper threshold ({thresholds.upper})"
-        ]
+        anomalies_descriptions = []
+        if thresholds.lower is not None and aggregated_value < thresholds.lower:
+            anomalies_descriptions += [
+                f"The trend value ({aggregated_value}) is below the lower threshold ({thresholds.lower})"
+            ]
+        if thresholds.upper is not None and aggregated_value > thresholds.upper:
+            anomalies_descriptions += [
+                f"The trend value ({aggregated_value}) is above the upper threshold ({thresholds.upper})"
+            ]
 
-    if not anomalies_descriptions:
-        logger.info("No threshold met", alert_id=alert.id)
-        return
+        if anomalies_descriptions:
+            send_notifications(alert, anomalies_descriptions)
+            alert_check.check_result = AlertCheck.CheckResult.Anomaly
+        else:
+            logger.info("No threshold met", alert_id=alert.id)
+            alert_check.check_result = AlertCheck.CheckResult.NormalValue
 
-    send_notifications(alert, anomalies_descriptions)
+    except Exception as e:
+        alert_check.check_result = AlertCheck.CheckResult.Error
+        alert_check.error_message = repr(e)
+
+    finally:
+        alert_check.save()
 
 
 @shared_task(ignore_result=True)

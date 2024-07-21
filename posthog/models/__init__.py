@@ -18,6 +18,7 @@ from .action.action_step import ActionStep
 from .activity_logging.activity_log import ActivityLog
 from .activity_logging.notification_viewed import NotificationViewed
 from .alert import Alert
+from .alert_check import AlertCheck
 from .annotation import Annotation
 from .async_deletion import AsyncDeletion, DeletionType
 from .async_migration import AsyncMigration, AsyncMigrationError, MigrationStatus
@@ -76,6 +77,7 @@ from .user_scene_personalisation import UserScenePersonalisation
 
 __all__ = [
     "Alert",
+    "AlertCheck",
     "Action",
     "ActionStep",
     "ActivityLog",
