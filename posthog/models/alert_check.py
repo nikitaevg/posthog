@@ -12,4 +12,4 @@ class AlertCheck(models.Model):
     calculated_value: models.FloatField = models.FloatField(null=True)
     anomaly_condition: models.JSONField = models.JSONField(default=dict)
     check_result: models.CharField = models.CharField(max_length=20, choices=CheckResult.choices)
-    error_message: models.CharField = models.CharField(null=True)
+    error_message: models.TextField = models.TextField(null=True)
